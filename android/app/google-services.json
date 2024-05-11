@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1049965475174",
+    "project_id": "push-notification-3a0f0",
+    "storage_bucket": "push-notification-3a0f0.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1049965475174:android:9fed78eccba7713b3f04a7",
+        "android_client_info": {
+          "package_name": "com.example.push_notification_iman"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDhZucDQmCADcQPeVsRDNDSOcI6F_-WOu8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
