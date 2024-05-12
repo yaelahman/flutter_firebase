@@ -4,9 +4,10 @@ import 'dart:math';
 import 'package:dio/dio.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class FirebaseApi {
-  final apiUrl = "http://192.168.0.116:8000/api";
+  final apiUrl = "https://example.manzcode.com/api";
   final firebaseMessaging = FirebaseMessaging.instance;
 
   final androidChannel = const AndroidNotificationChannel(
@@ -23,7 +24,7 @@ class FirebaseApi {
     // return message;
   }
 
-  Future<void> initNotifications() async {
+  initNotifications() async {
     await firebaseMessaging.requestPermission();
     final FCMToken = await firebaseMessaging.getToken();
     print('Token: $FCMToken');
@@ -31,6 +32,10 @@ class FirebaseApi {
     // FirebaseMessaging.onBackgroundMessage(handleBackgroundMessage);
     initPushNotifications();
     initLocalNotifications();
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    prefs.setString("FCMToken", FCMToken.toString());
+
+    return FCMToken.toString();
   }
 
   Future<void> initPushNotifications() async {
@@ -43,6 +48,7 @@ class FirebaseApi {
     FirebaseMessaging.onMessage.listen((message) {
       final notification = message.notification;
       if (notification == null) return;
+      // print("GET NOTIFICATION => " + jsonEncode(message.toMap()).toString());
 
       localNotifications.show(
         notification.hashCode,
@@ -68,21 +74,45 @@ class FirebaseApi {
   final dio = new Dio();
 
   storeToken(token) async {
-    Response response = await dio
-        .post('${apiUrl}/store-token', data: {'token': token.toString()});
-
-    print("Store Token : " + response.toString());
+    print("${apiUrl}/store-token");
+    try {
+      Response response = await dio
+          .post('${apiUrl}/store-token', data: {'token': token.toString()});
+      print("Store Token : " + response.toString());
+    } catch (e) {
+      print("Store Token Error " + e.toString());
+    }
   }
 
   sendMessage(token, message) async {
-    Response response = await dio.post('${apiUrl}/send-message',
-        data: {'token': token.toString(), 'message': message.toString()});
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String? fromToken = prefs.getString("FCMToken");
+
+    Response response = await dio.post('${apiUrl}/send-message', data: {
+      'token': token.toString(),
+      'message': message.toString(),
+      'from_token': fromToken
+    });
 
     print("Store Token : " + response.toString());
   }
 
-  listToken(setTokens) async {
-    final response = await dio.get('${apiUrl}/list-token');
+  getChallenge(id, setChallenge) async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String? fromToken = prefs.getString("FCMToken");
+    print("ENDPOINT = ${apiUrl}/get-challenge/${id}");
+
+    Response response = await dio
+        .post('${apiUrl}/get-challenge/${id}', data: {'token': fromToken});
+
+    setChallenge(response.data['data']);
+    print("GET CHALLENGE : " + response.toString());
+  }
+
+  listToken(setTokens, token) async {
+    final response =
+        await dio.get('${apiUrl}/list-token?token=' + token.toString());
+    print("LISTTOKEN => " + response.data.toString());
 
     setTokens(response.data['data']);
   }
