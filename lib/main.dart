@@ -142,23 +142,25 @@ class _MyHomePageState extends State<MyHomePage> {
         ? 'You Won'
         : (numbers.contains(messageController.text) ? 'You Lose' : "Nothing");
 
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text(result),
-          content: Text(messageController.text),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              child: Text('OK'),
-            ),
-          ],
-        );
-      },
-    );
+    if (result != "Nothing") {
+      showDialog(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: Text(result),
+            content: Text(messageController.text),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                },
+                child: Text('OK'),
+              ),
+            ],
+          );
+        },
+      );
+    }
   }
 
   @override
