@@ -2,13 +2,24 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_application_2/api/firebase_api.dart';
+import 'package:flutter_application_2/model/push_notification.dart';
+import 'package:overlay_support/overlay_support.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'firebase_options.dart';
+
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  print("Handling a background message: ${message.messageId}");
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
-  final fcmToken = await FirebaseApi().initNotifications();
+  // Firebase.initializeApp();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  final firebaseMessaging = FirebaseMessaging.instance;
+  await firebaseMessaging.requestPermission();
+  final FCMToken = await firebaseMessaging.getToken();
+  print('Token: $FCMToken');
 
   runApp(const MyApp());
 }
@@ -39,227 +50,175 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+  late final FirebaseMessaging _messaging;
+  late int _totalNotifications;
+  PushNotification? _notificationInfo;
 
-  final messageController = TextEditingController();
-  String? selectedToken;
-  String? FCMToken;
-  List listToken = [];
-  Map<dynamic, dynamic> challenge = {};
+  void registerNotification() async {
+    await Firebase.initializeApp();
+    _messaging = FirebaseMessaging.instance;
+
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+    NotificationSettings settings = await _messaging.requestPermission(
+      alert: true,
+      badge: true,
+      provisional: false,
+      sound: true,
+    );
+
+    if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+      print('User granted permission');
+
+      FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+        print(
+            'Message title: ${message.notification?.title}, body: ${message.notification?.body}, data: ${message.data}');
+
+        // Parse the message received
+        PushNotification notification = PushNotification(
+          title: message.notification?.title,
+          body: message.notification?.body,
+          dataTitle: message.data['title'],
+          dataBody: message.data['body'],
+        );
+
+        setState(() {
+          _notificationInfo = notification;
+          _totalNotifications++;
+        });
+
+        if (_notificationInfo != null) {
+          // For displaying the notification as an overlay
+          showSimpleNotification(
+            Text(_notificationInfo!.title!),
+            leading: NotificationBadge(totalNotifications: _totalNotifications),
+            subtitle: Text(_notificationInfo!.body!),
+            background: Colors.cyan.shade700,
+            duration: Duration(seconds: 2),
+          );
+        }
+      });
+    } else {
+      print('User declined or has not accepted permission');
+    }
+  }
+
+  // For handling notification when the app is in terminated state
+  checkForInitialMessage() async {
+    await Firebase.initializeApp();
+    RemoteMessage? initialMessage =
+        await FirebaseMessaging.instance.getInitialMessage();
+
+    if (initialMessage != null) {
+      PushNotification notification = PushNotification(
+        title: initialMessage.notification?.title,
+        body: initialMessage.notification?.body,
+        dataTitle: initialMessage.data['title'],
+        dataBody: initialMessage.data['body'],
+      );
+
+      setState(() {
+        _notificationInfo = notification;
+        _totalNotifications++;
+      });
+    }
+  }
 
   @override
-  initState() {
-    super.initState();
+  void initState() {
+    _totalNotifications = 0;
+    registerNotification();
+    checkForInitialMessage();
 
-    init();
-  }
-
-  Future<void> init() async {
-    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) async {
-      print("Notification opened from terminated state or background");
-      print("Notification data: ${message.data}");
-      Map<String, dynamic> userData = message.data;
-
-      print("GET CHALLENGE NOW " + challenge.length.toString());
-      await FirebaseApi()
-          .getChallenge(userData['key'].toString(), setChallenge);
-      // Handle the notification data
-    });
-    final SharedPreferences prefs = await SharedPreferences.getInstance();
-    final String? token = prefs.getString("FCMToken");
-    await FirebaseApi().listToken(setTokens, token);
-
-    setState(() {
-      FCMToken = prefs.getString(
-        "FCMToken",
+    // For handling notification when the app is in background
+    // but not terminated
+    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+      PushNotification notification = PushNotification(
+        title: message.notification?.title,
+        body: message.notification?.body,
+        dataTitle: message.data['title'],
+        dataBody: message.data['body'],
       );
+
+      setState(() {
+        _notificationInfo = notification;
+        _totalNotifications++;
+      });
     });
-  }
 
-  setChallenge(value) {
-    // print("SET CHALLENGE " + value.toString());
-    setState(() {
-      // print("SET CHALLENGE  1" + challenge.toString());
-      challenge = value;
-      if (value.isNotEmpty) selectedToken = value['token'];
-      // print("SET CHALLENGE  2" + challenge.toString());
-    });
-  }
-
-  setTokens(tokens) {
-    setState(() {
-      listToken = tokens;
-    });
-  }
-
-  bool isOdd(int number) {
-    return number % 2 != 0;
-  }
-
-  bool isEven(int number) {
-    return number % 2 == 0;
-  }
-
-  void handleOddEven(context, type) {
-    bool result = false;
-    if (type == "ODD") {
-      result = isOdd(int.parse(challenge['number'].toString()));
-    } else {
-      result = isEven(int.parse(challenge['number'].toString()));
-    }
-
-    setChallenge({});
-    _showAlertDialogResult(context, type, result);
-  }
-
-  void _showAlertDialogResult(BuildContext context, type, result) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text(type),
-          content:
-              result ? Text('WOAAA YOU WON THIS GAME') : Text("SORRY YOU LOST"),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              child: Text('OK'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  void _showAlertDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text('Success'),
-          content: Text('Challenge has been sended'),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              child: Text('OK'),
-            ),
-          ],
-        );
-      },
-    );
+    super.initState();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
+        title: Text('Notify'),
+        // brightness: Brightness.dark,
       ),
-      body: Center(
-        child: Column(
-          // mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            Container(
-                margin: EdgeInsets.symmetric(horizontal: 50),
-                child: Column(
+      body: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            'App for capturing Firebase Push Notifications',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.black,
+              fontSize: 20,
+            ),
+          ),
+          SizedBox(height: 16.0),
+          NotificationBadge(totalNotifications: _totalNotifications),
+          SizedBox(height: 16.0),
+          _notificationInfo != null
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text("Device"),
-                    DropdownButton(
-                      isExpanded: true,
-                      value: selectedToken,
-                      onChanged: ((newValue) => {
-                            setState(() {
-                              selectedToken = newValue.toString();
-                            })
-                          }),
-                      items: listToken.map<DropdownMenuItem>((value) {
-                        return DropdownMenuItem(
-                          value: value ?? '',
-                          child:
-                              Text((value ?? '').toString().substring(0, 10)),
-                        );
-                      }).toList(),
-                    ),
-                    const SizedBox(
-                      height: 20,
-                    ),
-                    const Text(
-                        "FILL NUMBER TO MAKE A CHALLENGE TO YOUR DEVICE SELECTED"),
-                    TextField(
-                      controller: messageController,
-                      keyboardType: const TextInputType.numberWithOptions(
-                          decimal: false), // Allow decimal numbers
-                      inputFormatters: <TextInputFormatter>[
-                        FilteringTextInputFormatter
-                            .digitsOnly // Allow only digits
-                      ],
-                    ),
-                    TextButton(
-                      onPressed: (() {
-                        FirebaseApi().sendMessage(
-                            selectedToken.toString(), messageController.text);
-                        _showAlertDialog(context);
-                      }),
-                      child: Container(
-                        color: Colors.blue,
-                        padding: EdgeInsets.all(10),
-                        child: const Text(
-                          "SEND",
-                          style: TextStyle(color: Colors.white),
-                        ),
+                    Text(
+                      'TITLE: ${_notificationInfo!.dataTitle ?? _notificationInfo!.title}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16.0,
                       ),
                     ),
-                    const SizedBox(
-                      height: 20,
+                    SizedBox(height: 8.0),
+                    Text(
+                      'BODY: ${_notificationInfo!.dataBody ?? _notificationInfo!.body}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16.0,
+                      ),
                     ),
-                    challenge.isNotEmpty
-                        ? Column(
-                            children: [
-                              const Text(
-                                  "CHOOSE ODD OR EVEN TO WIN THIS GAME "),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  TextButton(
-                                    onPressed: (() {
-                                      handleOddEven(context, "ODD");
-                                    }),
-                                    child: Container(
-                                      color: Colors.red,
-                                      padding: EdgeInsets.all(10),
-                                      child: const Text(
-                                        "ODD",
-                                        style: TextStyle(color: Colors.white),
-                                      ),
-                                    ),
-                                  ),
-                                  TextButton(
-                                    onPressed: (() {
-                                      handleOddEven(context, "EVEN");
-                                    }),
-                                    child: Container(
-                                      color: Colors.green,
-                                      padding: EdgeInsets.all(10),
-                                      child: const Text(
-                                        "EVEN",
-                                        style: TextStyle(color: Colors.white),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          )
-                        : Container()
                   ],
-                ))
-          ],
+                )
+              : Container(),
+        ],
+      ),
+    );
+  }
+}
+
+class NotificationBadge extends StatelessWidget {
+  final int totalNotifications;
+
+  const NotificationBadge({required this.totalNotifications});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 40.0,
+      height: 40.0,
+      decoration: new BoxDecoration(
+        color: Colors.red,
+        shape: BoxShape.circle,
+      ),
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: Text(
+            '$totalNotifications',
+            style: TextStyle(color: Colors.white, fontSize: 20),
+          ),
         ),
       ),
     );
