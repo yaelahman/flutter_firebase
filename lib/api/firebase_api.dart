@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -74,13 +75,30 @@ class FirebaseApi {
   final dio = new Dio();
 
   storeToken(token) async {
-    print("${apiUrl}/store-token");
+    String deviceName = await _getDeviceName();
     try {
-      Response response = await dio
-          .post('${apiUrl}/store-token', data: {'token': token.toString()});
+      Response response = await dio.post('${apiUrl}/store-token',
+          data: {'token': token.toString(), 'name': deviceName});
       print("Store Token : " + response.toString());
     } catch (e) {
       print("Store Token Error " + e.toString());
+    }
+  }
+
+  _getDeviceName() async {
+    try {
+      DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
+      String deviceName;
+      AndroidDeviceInfo androidInfo = await deviceInfo.androidInfo;
+      deviceName = '${androidInfo.manufacturer} ${androidInfo.model}';
+
+      if (deviceName.isNotEmpty) return deviceName;
+
+      IosDeviceInfo iosInfo = await deviceInfo.iosInfo;
+      deviceName = iosInfo.utsname.machine;
+      if (deviceName.isNotEmpty) return deviceName;
+    } catch (e) {
+      return "iPhone";
     }
   }
 
@@ -97,7 +115,7 @@ class FirebaseApi {
     print("Store Token : " + response.toString());
   }
 
-  getChallenge(id, setChallenge) async {
+  getChallenge(id) async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final String? fromToken = prefs.getString("FCMToken");
     print("ENDPOINT = ${apiUrl}/get-challenge/${id}");
@@ -105,8 +123,33 @@ class FirebaseApi {
     Response response = await dio
         .post('${apiUrl}/get-challenge/${id}', data: {'token': fromToken});
 
-    setChallenge(response.data['data']);
+    // setChallenge(response.data['data']);
     print("GET CHALLENGE : " + response.toString());
+  }
+
+  sendChallenge(token, type, number) async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String? fromToken = prefs.getString("FCMToken");
+
+    Response response = await dio.post('${apiUrl}/send-challenge', data: {
+      'token': fromToken,
+      'selectedToken': token,
+      'challeger_number': number,
+      'challeger_type': type,
+    });
+    print("SEND CHALLENGE : " + response.toString());
+  }
+
+  answerChallenge(id, number) async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String? fromToken = prefs.getString("FCMToken");
+
+    Response response = await dio.post('${apiUrl}/answer-challenge', data: {
+      'token': fromToken,
+      'id': id,
+      'opponent_number': number,
+    });
+    return response.data['data'];
   }
 
   listToken(setTokens, token) async {

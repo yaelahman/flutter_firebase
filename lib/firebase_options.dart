@@ -60,20 +60,20 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyAgaqEDc21AvhDMiRw2xMHIhvt6nflqywM',
-    appId: '1:1049965475174:ios:67e14b036fe24a103f04a7',
+    appId: '1:1049965475174:ios:7b86606a2f2063b23f04a7',
     messagingSenderId: '1049965475174',
     projectId: 'push-notification-3a0f0',
     storageBucket: 'push-notification-3a0f0.appspot.com',
-    iosBundleId: 'com.example.flutterApplication2',
+    iosBundleId: 'ch.glab.app.oddsandevens',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
     apiKey: 'AIzaSyAgaqEDc21AvhDMiRw2xMHIhvt6nflqywM',
-    appId: '1:1049965475174:ios:67e14b036fe24a103f04a7',
+    appId: '1:1049965475174:ios:7b86606a2f2063b23f04a7',
     messagingSenderId: '1049965475174',
     projectId: 'push-notification-3a0f0',
     storageBucket: 'push-notification-3a0f0.appspot.com',
-    iosBundleId: 'com.example.flutterApplication2',
+    iosBundleId: 'ch.glab.app.oddsandevens',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(

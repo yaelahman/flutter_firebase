@@ -1,5 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.example.push_notification_iman">
+    package="ch.glab.app.oddsandevens">
     <uses-permission android:name="android.permission.INTERNET"/>
 
 

@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:ffi';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
@@ -15,13 +18,16 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // Firebase.initializeApp();
-  // await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  // final fcmToken = await FirebaseApi().initNotifications();
+  // print("OKE");
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
-  // final firebaseMessaging = FirebaseMessaging.instance;
-  // await firebaseMessaging.requestPermission();
-  // final FCMToken = await firebaseMessaging.getToken();
-  // print('Token: $FCMToken');
+  FirebaseMessaging firebaseMessaging = FirebaseMessaging.instance;
+  final apnsToken = await firebaseMessaging.getAPNSToken();
+  await firebaseMessaging.requestPermission();
+  final FCMToken = await firebaseMessaging.getToken();
+
+  print('Token: $FCMToken');
+  print('APNS: $apnsToken');
 
   runApp(const MyApp());
 }
@@ -57,18 +63,92 @@ class _MyHomePageState extends State<MyHomePage> {
   PushNotification? _notificationInfo;
   final messageController = TextEditingController();
   String? token = '';
+  String? selectedToken;
+  String? choice;
+  List listToken = [];
+  Map<dynamic, dynamic> challenge = {};
+  bool isLoading = false;
+  bool isChallenger = false;
+  final List<int> numbers = [1, 2, 3, 4, 5];
+  var challengeResult = null;
+  var answerResult = null;
+
+  setIsLoading() {
+    setState(() {
+      isLoading = !isLoading;
+    });
+  }
+
+  checkOddEven(number) {
+    if (number % 2 == 0) {
+      return "EVEN";
+    } else {
+      return "ODD";
+    }
+  }
+
+  void checkResult(message) {
+    setState(() {
+      if (message.data['type'] == 'send') {
+        isLoading = false;
+        challengeResult = {
+          'id': message.data['key'],
+          'message': message.notification?.body,
+        };
+      }
+
+      if (message.data['type'] == 'answer') {
+        isLoading = false;
+        var data = jsonDecode(message.data['data']);
+        var sumResult = (data['challenger_number']) + (data['opponent_number']);
+        answerResult = {
+          'id': message.data['key'],
+          'data': data,
+          'message': message.notification?.body,
+          'you': data['challenger_type'],
+          'winner': checkOddEven(sumResult) == data['challenger_type'],
+          'result':
+              "You ${data['challenger_number']} + Opponent ${data['opponent_number']} = ${sumResult.toString()}"
+        };
+      }
+
+      if (message.data['type'] == 'message') {
+        showDialog(
+          context: context,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              title: const Text("INFO"),
+              content: Text(message.notification.body),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                  child: const Text('Close'),
+                ),
+              ],
+            );
+          },
+        );
+      }
+    });
+  }
 
   void registerNotification() async {
-    await Firebase.initializeApp(
-        options: DefaultFirebaseOptions.currentPlatform);
+    // await Firebase.initializeApp(
+    //     options: DefaultFirebaseOptions.currentPlatform);
     _messaging = FirebaseMessaging.instance;
 
+    // await FirebaseApi().initNotifications();
     final FCMToken = await _messaging.getToken();
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     prefs.setString("FCMToken", FCMToken.toString());
+    await FirebaseApi().storeToken(FCMToken);
+    print("TOKEN => " + FCMToken.toString());
     setState(() {
       token = FCMToken;
     });
+    await FirebaseApi().listToken(setTokens, token);
 
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
@@ -94,6 +174,8 @@ class _MyHomePageState extends State<MyHomePage> {
           dataBody: message.data['body'],
         );
 
+        checkResult(message);
+
         setState(() {
           _notificationInfo = notification;
           _totalNotifications++;
@@ -110,14 +192,37 @@ class _MyHomePageState extends State<MyHomePage> {
           );
         }
       });
+
+      FirebaseMessaging.onMessageOpenedApp
+          .listen((RemoteMessage message) async {
+        PushNotification notification = PushNotification(
+          title: message.notification?.title,
+          body: message.notification?.body,
+          dataTitle: message.data['title'],
+          dataBody: message.data['body'],
+        );
+        print(
+            'Message from out of application title: ${message.notification?.title}, body: ${message.notification?.body}, data: ${message.data}');
+        checkResult(message);
+        setState(() {
+          _notificationInfo = notification;
+          _totalNotifications++;
+        });
+      });
     } else {
       print('User declined or has not accepted permission');
     }
   }
 
+  setTokens(tokens) {
+    setState(() {
+      listToken = tokens;
+    });
+  }
+
   // For handling notification when the app is in terminated state
   checkForInitialMessage() async {
-    await Firebase.initializeApp();
+    // await Firebase.initializeApp();
     RemoteMessage? initialMessage =
         await FirebaseMessaging.instance.getInitialMessage();
 
@@ -136,31 +241,62 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
-  void _showAlertDialog(BuildContext context) {
-    List<String> numbers = ["1", "2", "4", "5"];
-    final result = messageController.text == "3"
-        ? 'You Won'
-        : (numbers.contains(messageController.text) ? 'You Lose' : "Nothing");
+  void _showAlertDialog(BuildContext context, value) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text("INFO"),
+          content: Text(value),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+  }
 
-    if (result != "Nothing") {
-      showDialog(
-        context: context,
-        builder: (BuildContext context) {
-          return AlertDialog(
-            title: Text(result),
-            content: Text(messageController.text),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                },
-                child: Text('OK'),
-              ),
-            ],
-          );
-        },
-      );
+  handleChoice(BuildContext context, String? value) {
+    print(selectedToken);
+    if (selectedToken == null) {
+      _showAlertDialog(context, "PLEASE SELECT OPPONENT");
+      return;
     }
+
+    setState(() {
+      choice = value;
+    });
+  }
+
+  handleSendChallenge(value) async {
+    setIsLoading();
+    setState(() {
+      isChallenger = true;
+    });
+    await FirebaseApi().sendChallenge(selectedToken, choice, value);
+  }
+
+  handleAnswerChallenge(value) async {
+    setIsLoading();
+
+    var data =
+        await FirebaseApi().answerChallenge(challengeResult['id'], value);
+
+    var sumResult = data['challenger_number'] + data['opponent_number'];
+
+    setState(() {
+      challengeResult['isAnswer'] = true;
+      challengeResult['you'] = data['opponent_type'];
+      challengeResult['winner'] =
+          checkOddEven(sumResult) == data['opponent_type'];
+      challengeResult['result'] =
+          "Challenger ${data['challenger_number']} + You ${data['opponent_number']} = ${sumResult.toString()}";
+    });
   }
 
   @override
@@ -171,19 +307,6 @@ class _MyHomePageState extends State<MyHomePage> {
 
     // For handling notification when the app is in background
     // but not terminated
-    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      PushNotification notification = PushNotification(
-        title: message.notification?.title,
-        body: message.notification?.body,
-        dataTitle: message.data['title'],
-        dataBody: message.data['body'],
-      );
-
-      setState(() {
-        _notificationInfo = notification;
-        _totalNotifications++;
-      });
-    });
 
     super.initState();
   }
@@ -192,77 +315,234 @@ class _MyHomePageState extends State<MyHomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Notify'),
+        title: const Text('ODD EVEN GAME'),
         // brightness: Brightness.dark,
       ),
-      body: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            'App for capturing Firebase Push Notifications',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.black,
-              fontSize: 20,
-            ),
-          ),
-          Container(
-            padding: EdgeInsets.all(30),
-            child: Column(
-              children: [
-                const Text(
-                    "FILL NUMBER TO MAKE A CHALLENGE TO YOUR DEVICE SELECTED"),
-                TextField(
-                  controller: messageController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                      decimal: false), // Allow decimal numbers
-                  inputFormatters: <TextInputFormatter>[
-                    FilteringTextInputFormatter.digitsOnly // Allow only digits
-                  ],
-                ),
-                TextButton(
-                  onPressed: (() {
-                    FirebaseApi().sendMessage(token, messageController.text);
-                    _showAlertDialog(context);
-                  }),
-                  child: Container(
-                    color: Colors.blue,
-                    padding: EdgeInsets.all(10),
-                    child: const Text(
-                      "SEND",
-                      style: TextStyle(color: Colors.white),
+      body: SingleChildScrollView(
+        child: Column(
+          // mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(30),
+              child: Column(
+                children: [
+                  const Text("Choose an Opponent"),
+                  DropdownButton(
+                    isExpanded: true,
+                    value: selectedToken,
+                    onChanged: ((newValue) => {
+                          setState(() {
+                            answerResult = null;
+                            isLoading = false;
+                            isChallenger = false;
+                            selectedToken = newValue.toString();
+                            choice = null;
+                          })
+                        }),
+                    items: listToken.map<DropdownMenuItem>((value) {
+                      return DropdownMenuItem(
+                        value: value['fcm_token'] ?? '',
+                        child: Text((value['name'] ?? '').toString()),
+                      );
+                    }).toList(),
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      TextButton(
+                        onPressed: (() {
+                          if (!isLoading && answerResult == null)
+                            handleChoice(context, "ODD");
+                        }),
+                        child: Container(
+                          color: choice != null
+                              ? const Color.fromARGB(255, 233, 148, 142)
+                              : Colors.red,
+                          padding: const EdgeInsets.all(10),
+                          child: const Text(
+                            "ODD",
+                            style: TextStyle(color: Colors.white),
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: (() {
+                          if (!isLoading && answerResult == null)
+                            handleChoice(context, "EVEN");
+                        }),
+                        child: Container(
+                          color: choice != null
+                              ? const Color.fromARGB(255, 122, 176, 124)
+                              : Colors.green,
+                          padding: const EdgeInsets.all(10),
+                          child: const Text(
+                            "EVEN",
+                            style: TextStyle(color: Colors.white),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  choice != null
+                      ? Column(
+                          children: [
+                            const Text("SELECT NUMBER"),
+                            ItemList(
+                              isLoading: isLoading,
+                              onItemSelected: (value) {
+                                if (!isLoading && answerResult == null)
+                                  handleSendChallenge(value);
+                              },
+                            ),
+                          ],
+                        )
+                      : Container(),
+                  isChallenger
+                      ? Column(
+                          children: [
+                            const Text("Waiting for Opponent"),
+                            answerResult != null &&
+                                    answerResult['message'] != null
+                                ? Text(answerResult['message'])
+                                : Container(),
+                            answerResult != null &&
+                                    answerResult['message'] != null
+                                ? const Text("Matching Result")
+                                : Container(),
+                            answerResult != null &&
+                                    answerResult['result'] != null
+                                ? Text(answerResult['result'])
+                                : Container(),
+                            answerResult != null && answerResult['you'] != null
+                                ? Text("You're ${answerResult['you']}")
+                                : Container(),
+                            answerResult != null &&
+                                    answerResult['winner'] != null &&
+                                    answerResult['winner']
+                                ? const Text("You're WINNER")
+                                : answerResult != null &&
+                                        answerResult['winner'] != null
+                                    ? const Text("You're LOSER")
+                                    : Container(),
+                          ],
+                        )
+                      : Container(),
+                  const SizedBox(
+                    height: 20,
+                  ),
+                  const Divider(
+                    height: 2,
+                  ),
+                  const SizedBox(
+                    height: 20,
+                  ),
+                  const Text("Waiting for Challenger"),
+                  const SizedBox(
+                    height: 10,
+                  ),
+                  challengeResult != null
+                      ? Column(
+                          children: [
+                            Text(challengeResult['message']),
+                            const SizedBox(
+                              height: 10,
+                            ),
+                            const Text("SELECT NUMBER"),
+                            ItemList(
+                              isLoading: isLoading,
+                              onItemSelected: (value) {
+                                handleAnswerChallenge(value);
+                              },
+                            ),
+                            challengeResult['isAnswer'] != null
+                                ? const Text("Matching Result")
+                                : Container(),
+                            challengeResult != null &&
+                                    challengeResult['result'] != null
+                                ? Text(challengeResult['result'])
+                                : Container(),
+                            challengeResult['you'] != null
+                                ? Text("You're ${challengeResult['you']}")
+                                : Container(),
+                            challengeResult != null &&
+                                    challengeResult['winner'] != null &&
+                                    challengeResult['winner']
+                                ? const Text("You're WINNER")
+                                : challengeResult != null &&
+                                        challengeResult['winner'] != null
+                                    ? const Text("You're LOSER")
+                                    : Container(),
+                          ],
+                        )
+                      : Container(),
+                  const Divider(
+                    height: 2,
+                  ),
+                  const SizedBox(
+                    height: 20,
+                  ),
+                  const Text("FILL MESSAGE"),
+                  TextField(
+                    controller: messageController,
+                    // keyboardType: const TextInputType.numberWithOptions(
+                    //     decimal: false), // Allow decimal numbers
+                    // inputFormatters: <TextInputFormatter>[
+                    //   FilteringTextInputFormatter.digitsOnly // Allow only digits
+                    // ],
+                  ),
+                  TextButton(
+                    onPressed: (() {
+                      FirebaseApi().sendMessage(
+                          selectedToken.toString(), messageController.text);
+                    }),
+                    child: Container(
+                      color: Colors.blue,
+                      padding: const EdgeInsets.all(10),
+                      child: const Text(
+                        "SEND",
+                        style: TextStyle(color: Colors.white),
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          SizedBox(height: 16.0),
-          NotificationBadge(totalNotifications: _totalNotifications),
-          SizedBox(height: 16.0),
-          _notificationInfo != null
-              ? Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'TITLE: ${_notificationInfo!.dataTitle ?? _notificationInfo!.title}',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16.0,
-                      ),
-                    ),
-                    SizedBox(height: 8.0),
-                    Text(
-                      'BODY: ${_notificationInfo!.dataBody ?? _notificationInfo!.body}',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16.0,
-                      ),
-                    ),
-                  ],
-                )
-              : Container(),
-        ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class ItemList extends StatelessWidget {
+  final List<int> items = [1, 2, 3, 4, 5];
+  final Function(int) onItemSelected;
+  final bool isLoading;
+  ItemList({required this.isLoading, required this.onItemSelected});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(1.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: items.map((int item) {
+          return TextButton(
+            onPressed: (() {
+              if (!isLoading) onItemSelected(item);
+            }),
+            child: Container(
+              color: isLoading
+                  ? const Color.fromARGB(255, 127, 125, 103)
+                  : const Color.fromARGB(255, 141, 130, 24),
+              padding: const EdgeInsets.all(10),
+              child: Text(
+                item.toString(),
+                style: const TextStyle(color: Colors.white),
+              ),
+            ),
+          );
+        }).toList(), // Convert Iterable to List<Widget>
       ),
     );
   }
